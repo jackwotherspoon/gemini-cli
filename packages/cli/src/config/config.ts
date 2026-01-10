@@ -7,7 +7,6 @@
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 import process from 'node:process';
-import { isStdinTTY } from '../utils/ttyUtils.js';
 import { mcpCommand } from '../commands/mcp.js';
 import { extensionsCommand } from '../commands/extensions.js';
 import { skillsCommand } from '../commands/skills.js';
@@ -547,7 +546,7 @@ export async function loadCliConfig(
   const interactive =
     !!argv.promptInteractive ||
     !!argv.experimentalAcp ||
-    (isStdinTTY() && !hasQuery && !argv.prompt);
+    (process.stdin.isTTY && !hasQuery && !argv.prompt);
 
   const allowedTools = argv.allowedTools || settings.tools?.allowed || [];
   const allowedToolsSet = new Set(allowedTools);

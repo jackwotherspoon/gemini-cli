@@ -10,7 +10,6 @@ import { AppContainer } from './ui/AppContainer.js';
 import { loadCliConfig, parseArguments } from './config/config.js';
 import * as cliConfig from './config/config.js';
 import { readStdin } from './utils/readStdin.js';
-import { isStdinTTY } from './utils/ttyUtils.js';
 import { basename } from 'node:path';
 import v8 from 'node:v8';
 import os from 'node:os';
@@ -338,7 +337,7 @@ export async function main() {
   parseArgsHandle?.end();
 
   // Check for invalid input combinations early to prevent crashes
-  if (argv.promptInteractive && !isStdinTTY()) {
+  if (argv.promptInteractive && !process.stdin.isTTY) {
     writeToStderr(
       'Error: The --prompt-interactive flag cannot be used when input is piped from stdin.\n',
     );
@@ -431,7 +430,7 @@ export async function main() {
         }
       }
       let stdinData = '';
-      if (!isStdinTTY()) {
+      if (!process.stdin.isTTY) {
         stdinData = await readStdin();
       }
 
@@ -544,7 +543,7 @@ export async function main() {
     }
 
     const wasRaw = process.stdin.isRaw;
-    if (config.isInteractive() && !wasRaw && isStdinTTY()) {
+    if (config.isInteractive() && !wasRaw && process.stdin.isTTY) {
       // Set this as early as possible to avoid spurious characters from
       // input showing up in the output.
       process.stdin.setRawMode(true);
@@ -638,7 +637,7 @@ export async function main() {
     // If not a TTY, read from stdin
     // This is for cases where the user pipes input directly into the command
     let stdinData: string | undefined = undefined;
-    if (!isStdinTTY()) {
+    if (!process.stdin.isTTY) {
       stdinData = await readStdin();
       if (stdinData) {
         input = input ? `${stdinData}\n\n${input}` : stdinData;

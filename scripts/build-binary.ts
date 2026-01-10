@@ -205,40 +205,39 @@ for (const target of targets) {
   console.log(`\nBuilding ${packageName}...`);
 
   try {
-    // Create output directory
     await $`mkdir -p ${outputDir}/bin`;
 
-    // Build arguments
-    const compileArgs = [
-      'build',
-      '--compile',
-      '--target',
-      bunTarget,
-      bundlePath,
-      '--outfile',
-      outputPath,
-    ];
-
-    // Run bun build
-    const buildProcess = Bun.spawn(['bun', ...compileArgs], {
-      cwd: root,
-      stdout: 'pipe',
-      stderr: 'pipe',
+    const buildResult = await Bun.build({
+      entrypoints: [bundlePath],
+      target: 'bun',
+      compile: {
+        autoloadBunfig: false,
+        autoloadDotenv: false,
+        // @ts-expect-error - Bun types may not be up to date
+        autoloadTsconfig: false,
+        autoloadPackageJson: true,
+        target: bunTarget as
+          | 'bun-linux-x64'
+          | 'bun-linux-arm64'
+          | 'bun-darwin-x64'
+          | 'bun-darwin-arm64'
+          | 'bun-windows-x64',
+        outfile: outputPath,
+      },
     });
 
-    const exitCode = await buildProcess.exited;
-
-    if (exitCode !== 0) {
-      const stderr = await new Response(buildProcess.stderr).text();
-      throw new Error(`Build failed with exit code ${exitCode}: ${stderr}`);
+    if (!buildResult.success) {
+      const errors = buildResult.logs
+        .filter((log) => log.level === 'error')
+        .map((log) => log.message)
+        .join('\n');
+      throw new Error(`Build failed: ${errors}`);
     }
 
-    // Verify binary was created
     if (!existsSync(outputPath)) {
       throw new Error(`Binary not found at ${outputPath}`);
     }
 
-    // Create package.json for this platform package
     const platformPkg = {
       name: packageName,
       version,
