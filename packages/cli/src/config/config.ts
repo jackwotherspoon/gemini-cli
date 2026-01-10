@@ -12,8 +12,7 @@ import { mcpCommand } from '../commands/mcp.js';
 import { extensionsCommand } from '../commands/extensions.js';
 import { skillsCommand } from '../commands/skills.js';
 import { hooksCommand } from '../commands/hooks.js';
-import type {
- ExtensionEvents ,
+import {
   Config,
   setGeminiMdFilename as setServerGeminiMdFilename,
   getCurrentGeminiMdFilename,
@@ -35,9 +34,11 @@ import type {
   WEB_FETCH_TOOL_NAME,
   getVersion,
   PREVIEW_GEMINI_MODEL_AUTO,
+  type ExtensionEvents,
   type HookDefinition,
   type HookEventName,
-  type OutputFormat } from '@google/gemini-cli-core';
+  type OutputFormat,
+} from '@google/gemini-cli-core';
 import type { Settings } from './settings.js';
 import { saveModelChange, loadSettings } from './settings.js';
 
