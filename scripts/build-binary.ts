@@ -223,7 +223,6 @@ for (const target of targets) {
           | 'bun-darwin-arm64'
           | 'bun-windows-x64',
         outfile: outputPath,
-        execArgv: ['--'],
       },
     });
 
