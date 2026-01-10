@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/* global Bun */
+
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -34,40 +36,25 @@ if (!versionType) {
 // 2. Bump the version in the root and all workspace package.json files.
 run(`npm version ${versionType} --no-git-tag-version --allow-same-version`);
 
-// 3. Get all workspaces and filter out the one we don't want to version.
-const workspacesToExclude = [];
-let lsOutput;
-try {
-  lsOutput = JSON.parse(
-    execSync('npm ls --workspaces --json --depth=0').toString(),
-  );
-} catch (e) {
-  // `npm ls` can exit with a non-zero status code if there are issues
-  // with dependencies, but it will still produce the JSON output we need.
-  // We'll try to parse the stdout from the error object.
-  if (e.stdout) {
-    console.warn(
-      'Warning: `npm ls` exited with a non-zero status code. Attempting to proceed with the output.',
-    );
-    try {
-      lsOutput = JSON.parse(e.stdout.toString());
-    } catch (parseError) {
-      console.error(
-        'Error: Failed to parse JSON from `npm ls` output even after `npm ls` failed.',
-      );
-      console.error('npm ls stderr:', e.stderr.toString());
-      console.error('Parse error:', parseError);
-      process.exit(1);
+// 3. Get actual workspace packages using Bun's glob.
+// This avoids npm ls which returns all dependencies, not just workspaces.
+const rootPkg = await Bun.file('package.json').json();
+const workspacePatterns = rootPkg.workspaces || [];
+
+const workspacesToVersion = [];
+for (const pattern of workspacePatterns) {
+  const glob = new Bun.Glob(`${pattern}/package.json`);
+  for await (const path of glob.scan('.')) {
+    const pkg = await Bun.file(path).json();
+    if (pkg.name) {
+      workspacesToVersion.push(pkg.name);
     }
-  } else {
-    console.error('Error: `npm ls` failed with no output.');
-    console.error(e.stderr?.toString() || e);
-    process.exit(1);
   }
 }
-const allWorkspaces = Object.keys(lsOutput.dependencies || {});
-const workspacesToVersion = allWorkspaces.filter(
-  (wsName) => !workspacesToExclude.includes(wsName),
+
+console.log(
+  `Found ${workspacesToVersion.length} workspaces:`,
+  workspacesToVersion,
 );
 
 for (const workspaceName of workspacesToVersion) {
