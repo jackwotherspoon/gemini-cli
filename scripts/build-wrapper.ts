@@ -67,7 +67,6 @@ const wrapperPkg = {
   version,
   description: 'Gemini CLI - AI-powered command-line interface',
   license: 'Apache-2.0',
-  type: 'module',
   repository: {
     type: 'git',
     url: 'git+https://github.com/jackwotherspoon/gemini-cli.git',
