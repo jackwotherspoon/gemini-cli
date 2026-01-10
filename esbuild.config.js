@@ -23,6 +23,25 @@ const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
 const pkg = require(path.resolve(__dirname, 'package.json'));
 
+// Plugin to resolve generated/git-commit.js through workspace symlinks
+function createGitCommitPlugin() {
+  return {
+    name: 'git-commit-resolver',
+    setup(build) {
+      // Match any import path ending with generated/git-commit.js
+      build.onResolve({ filter: /generated\/git-commit\.js$/ }, (_args) => {
+        // Always resolve to the actual file in packages/core
+        return {
+          path: path.resolve(
+            __dirname,
+            'packages/core/src/generated/git-commit.js',
+          ),
+        };
+      });
+    },
+  };
+}
+
 function createWasmPlugins() {
   const wasmBinaryPlugin = {
     name: 'wasm-binary',
@@ -77,7 +96,7 @@ const cliConfig = {
   define: {
     'process.env.CLI_VERSION': JSON.stringify(pkg.version),
   },
-  plugins: createWasmPlugins(),
+  plugins: [createGitCommitPlugin(), ...createWasmPlugins()],
   alias: {
     'is-in-ci': path.resolve(__dirname, 'packages/cli/src/patches/is-in-ci.ts'),
   },
@@ -94,7 +113,7 @@ const a2aServerConfig = {
   define: {
     'process.env.CLI_VERSION': JSON.stringify(pkg.version),
   },
-  plugins: createWasmPlugins(),
+  plugins: [createGitCommitPlugin(), ...createWasmPlugins()],
 };
 
 Promise.allSettled([
