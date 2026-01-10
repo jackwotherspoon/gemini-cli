@@ -7,11 +7,13 @@
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 import process from 'node:process';
+import { isStdinTTY } from '../utils/ttyUtils.js';
 import { mcpCommand } from '../commands/mcp.js';
 import { extensionsCommand } from '../commands/extensions.js';
 import { skillsCommand } from '../commands/skills.js';
 import { hooksCommand } from '../commands/hooks.js';
-import {
+import type {
+ ExtensionEvents ,
   Config,
   setGeminiMdFilename as setServerGeminiMdFilename,
   getCurrentGeminiMdFilename,
@@ -26,7 +28,7 @@ import {
   SHELL_TOOL_NAME,
   resolveTelemetrySettings,
   FatalConfigError,
-  getPty,
+  createPtyAdapter,
   EDIT_TOOL_NAME,
   debugLogger,
   loadServerHierarchicalMemory,
@@ -35,8 +37,7 @@ import {
   PREVIEW_GEMINI_MODEL_AUTO,
   type HookDefinition,
   type HookEventName,
-  type OutputFormat,
-} from '@google/gemini-cli-core';
+  type OutputFormat } from '@google/gemini-cli-core';
 import type { Settings } from './settings.js';
 import { saveModelChange, loadSettings } from './settings.js';
 
@@ -48,7 +49,6 @@ import { RESUME_LATEST } from '../utils/sessionUtils.js';
 import { isWorkspaceTrusted } from './trustedFolders.js';
 import { createPolicyEngineConfig } from './policy.js';
 import { ExtensionManager } from './extension-manager.js';
-import type { ExtensionEvents } from '@google/gemini-cli-core/src/utils/extensionLoader.js';
 import { requestConsentNonInteractive } from './extensions/consent.js';
 import { promptForSetting } from './extensions/extensionSettings.js';
 import type { EventEmitter } from 'node:stream';
@@ -546,7 +546,7 @@ export async function loadCliConfig(
   const interactive =
     !!argv.promptInteractive ||
     !!argv.experimentalAcp ||
-    (process.stdin.isTTY && !hasQuery && !argv.prompt);
+    (isStdinTTY() && !hasQuery && !argv.prompt);
 
   const allowedTools = argv.allowedTools || settings.tools?.allowed || [];
   const allowedToolsSet = new Set(allowedTools);
@@ -625,7 +625,7 @@ export async function loadCliConfig(
       ? argv.screenReader
       : (settings.ui?.accessibility?.screenReader ?? false);
 
-  const ptyInfo = await getPty();
+  const ptyAdapter = await createPtyAdapter();
 
   return new Config({
     sessionId,
@@ -719,7 +719,7 @@ export async function loadCliConfig(
     fakeResponses: argv.fakeResponses,
     recordResponses: argv.recordResponses,
     retryFetchErrors: settings.general?.retryFetchErrors,
-    ptyInfo: ptyInfo?.name,
+    ptyInfo: ptyAdapter?.backend,
     modelConfigServiceConfig: settings.modelConfigs,
     // TODO: loading of hooks based on workspace trust
     enableHooks: settings.tools?.enableHooks,

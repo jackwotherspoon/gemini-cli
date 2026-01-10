@@ -38,12 +38,16 @@ runs:
       with:
         ref: '${{ inputs.github-sha }}'
         fetch-depth: 0
+    - name: 'Setup Bun'
+      uses: 'oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979' # ratchet:oven-sh/setup-bun@v2
+      with:
+        bun-version-file: 'package.json'
     - name: 'Install Dependencies'
       shell: 'bash'
-      run: 'npm install'
-    - name: 'npm build'
+      run: 'bun install --frozen-lockfile'
+    - name: 'Build'
       shell: 'bash'
-      run: 'npm run build'
+      run: 'bun run build'
     - name: 'Set up Docker Buildx'
       uses: 'docker/setup-buildx-action@v3'
     - name: 'Log in to GitHub Container Registry'
@@ -73,7 +77,7 @@ runs:
         GEMINI_SANDBOX_IMAGE_TAG: '${{ steps.image_tag.outputs.FINAL_TAG }}'
         GEMINI_SANDBOX: 'docker'
       run: |-
-        npm run build:sandbox -- \
+        bun run build:sandbox -- \
           --image google/gemini-cli-sandbox:${{ steps.image_tag.outputs.FINAL_TAG }} \
           --output-file final_image_uri.txt
         echo "uri=$(cat final_image_uri.txt)" >> $GITHUB_OUTPUT

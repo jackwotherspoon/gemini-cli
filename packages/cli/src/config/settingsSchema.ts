@@ -919,7 +919,7 @@ const SETTINGS_SCHEMA = {
             requiresRestart: true,
             default: true,
             description: oneLine`
-              Use node-pty for an interactive shell experience.
+              Use bun-pty for an interactive shell experience.
               Fallback to child_process still applies.
             `,
             showInDialog: true,

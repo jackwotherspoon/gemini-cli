@@ -55,13 +55,7 @@ function createWasmPlugins() {
 }
 
 const external = [
-  '@lydell/node-pty',
-  'node-pty',
-  '@lydell/node-pty-darwin-arm64',
-  '@lydell/node-pty-darwin-x64',
-  '@lydell/node-pty-linux-x64',
-  '@lydell/node-pty-win32-arm64',
-  '@lydell/node-pty-win32-x64',
+  'bun-pty', // Uses bun:ffi, must be external
 ];
 
 const baseConfig = {
@@ -76,7 +70,7 @@ const baseConfig = {
 const cliConfig = {
   ...baseConfig,
   banner: {
-    js: `import { createRequire } from 'module'; const require = createRequire(import.meta.url); globalThis.__filename = require('url').fileURLToPath(import.meta.url); globalThis.__dirname = require('path').dirname(globalThis.__filename);`,
+    js: `const require = (await import('module')).createRequire(import.meta.url); globalThis.__filename = require('url').fileURLToPath(import.meta.url); globalThis.__dirname = require('path').dirname(globalThis.__filename);`,
   },
   entryPoints: ['packages/cli/index.ts'],
   outfile: 'bundle/gemini.js',

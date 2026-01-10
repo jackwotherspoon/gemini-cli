@@ -98,7 +98,7 @@ runs:
       working-directory: '${{ inputs.working-directory }}'
       shell: 'bash'
       run: |
-        npm run release:version "${{ inputs.release-version }}"
+        bun run release:version "${{ inputs.release-version }}"
 
     - name: '💾 Commit and Conditionally Push package versions'
       working-directory: '${{ inputs.working-directory }}'
@@ -122,14 +122,32 @@ runs:
       working-directory: '${{ inputs.working-directory }}'
       shell: 'bash'
       run: |
-        npm run build:packages
-        npm run prepare:package
+        bun run build:packages
+        bun run prepare:package
 
     - name: '🎁 Bundle'
       working-directory: '${{ inputs.working-directory }}'
       shell: 'bash'
       run: |
-        npm run bundle
+        bun run bundle
+
+    - name: '🍞 Setup Bun'
+      uses: 'oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979' # ratchet:oven-sh/setup-bun@v2
+      with:
+        bun-version-file: 'package.json'
+
+    - name: '🔨 Build Bun Binaries'
+      working-directory: '${{ inputs.working-directory }}'
+      shell: 'bash'
+      run: |
+        echo "Building Bun standalone binaries for all platforms..."
+        bun run scripts/build-binary.ts --all --skip-bundle
+        echo ""
+        echo "Building wrapper package..."
+        bun run scripts/build-wrapper.ts
+        echo ""
+        echo "Built packages:"
+        ls -la dist/
 
     # TODO: Refactor this github specific publishing script to be generalized based upon inputs.
     - name: '📦 Prepare for GitHub release'
@@ -187,6 +205,32 @@ runs:
         wombat-token-core: '${{ inputs.wombat-token-core }}'
         wombat-token-cli: '${{ inputs.wombat-token-cli }}'
         wombat-token-a2a-server: '${{ inputs.wombat-token-a2a-server }}'
+
+    - name: '📦 Publish Platform Packages'
+      working-directory: '${{ inputs.working-directory }}'
+      env:
+        NODE_AUTH_TOKEN: '${{ steps.cli-token.outputs.auth-token }}'
+        DRY_RUN: '${{ inputs.dry-run }}'
+      shell: 'bash'
+      run: |
+        set -e
+        echo "Publishing platform-specific binary packages..."
+
+        for pkg_dir in dist/bun-gemini-cli-*; do
+          if [ -d "$pkg_dir" ] && [ -f "$pkg_dir/package.json" ]; then
+            pkg_name=$(node -p "require('./$pkg_dir/package.json').name")
+            echo "Publishing $pkg_name..."
+
+            cd "$pkg_dir"
+            if [ "$DRY_RUN" == "true" ]; then
+              npm pack
+              echo "[DRY RUN] Would publish $pkg_name"
+            else
+              npm publish --access public --no-tag || echo "Warning: $pkg_name may already exist"
+            fi
+            cd - > /dev/null
+          fi
+        done
 
     - name: '📦 Publish CLI'
       working-directory: '${{ inputs.working-directory }}'
@@ -257,8 +301,16 @@ runs:
         GITHUB_TOKEN: '${{ inputs.github-token }}'
       shell: 'bash'
       run: |
+        # Collect release assets: all platform binaries
+        ASSETS=""
+        for binary in dist/bun-gemini-cli-*/bin/*; do
+          if [ -f "$binary" ]; then
+            ASSETS="$ASSETS $binary"
+          fi
+        done
+
         gh release create "${{ inputs.release-tag }}" \
-          bundle/gemini.js \
+          $ASSETS \
           --target "${{ steps.release_branch.outputs.BRANCH_NAME }}" \
           --title "Release ${{ inputs.release-tag }}" \
           --notes-start-tag "${{ inputs.previous-tag }}" \

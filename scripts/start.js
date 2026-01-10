@@ -27,15 +27,15 @@ const root = join(__dirname, '..');
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8'));
 
 // check build status, write warnings to file for app to display if needed
-execSync('node ./scripts/check-build-status.js', {
+execSync('bun ./scripts/check-build-status.js', {
   stdio: 'inherit',
   cwd: root,
 });
 
-const nodeArgs = [];
+const bunArgs = [];
 let sandboxCommand = undefined;
 try {
-  sandboxCommand = execSync('node scripts/sandbox_command.js', {
+  sandboxCommand = execSync('bun scripts/sandbox_command.js', {
     cwd: root,
   })
     .toString()
@@ -51,14 +51,14 @@ const isInDebugMode = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
 if (isInDebugMode && !sandboxCommand) {
   if (process.env.SANDBOX) {
     const port = process.env.DEBUG_PORT || '9229';
-    nodeArgs.push(`--inspect-brk=0.0.0.0:${port}`);
+    bunArgs.push(`--inspect-brk=0.0.0.0:${port}`);
   } else {
-    nodeArgs.push('--inspect-brk');
+    bunArgs.push('--inspect-brk');
   }
 }
 
-nodeArgs.push(join(root, 'packages', 'cli'));
-nodeArgs.push(...process.argv.slice(2));
+bunArgs.push(join(root, 'packages', 'cli'));
+bunArgs.push(...process.argv.slice(2));
 
 const env = {
   ...process.env,
@@ -71,7 +71,7 @@ if (isInDebugMode) {
   // than the relaunched process making it harder to debug.
   env.GEMINI_CLI_NO_RELAUNCH = 'true';
 }
-const child = spawn('node', nodeArgs, { stdio: 'inherit', env });
+const child = spawn('bun', bunArgs, { stdio: 'inherit', env });
 
 child.on('close', (code) => {
   process.exit(code);

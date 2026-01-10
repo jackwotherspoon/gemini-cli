@@ -1018,8 +1018,8 @@
           "properties": {
             "enableInteractiveShell": {
               "title": "Enable Interactive Shell",
-              "description": "Use node-pty for an interactive shell experience. Fallback to child_process still applies.",
-              "markdownDescription": "Use node-pty for an interactive shell experience. Fallback to child_process still applies.\n\n- Category: `Tools`\n- Requires restart: `yes`\n- Default: `true`",
+              "description": "Use bun-pty for an interactive shell experience. Fallback to child_process still applies.",
+              "markdownDescription": "Use bun-pty for an interactive shell experience. Fallback to child_process still applies.\n\n- Category: `Tools`\n- Requires restart: `yes`\n- Default: `true`",
               "default": true,
               "type": "boolean"
             },

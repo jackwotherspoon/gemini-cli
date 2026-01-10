@@ -28,12 +28,15 @@ const mockPtySpawn = vi.hoisted(() => vi.fn());
 const mockCpSpawn = vi.hoisted(() => vi.fn());
 const mockIsBinary = vi.hoisted(() => vi.fn());
 const mockPlatform = vi.hoisted(() => vi.fn());
-const mockGetPty = vi.hoisted(() => vi.fn());
 const mockSerializeTerminalToObject = vi.hoisted(() => vi.fn());
+const mockCreatePtyAdapter = vi.hoisted(() => vi.fn());
 
 // Top-level Mocks
-vi.mock('@lydell/node-pty', () => ({
+vi.mock('bun-pty', () => ({
   spawn: mockPtySpawn,
+}));
+vi.mock('../utils/pty-adapter.js', () => ({
+  createPtyAdapter: mockCreatePtyAdapter,
 }));
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal();
@@ -62,9 +65,6 @@ vi.mock('os', () => ({
       SIGKILL: 9,
     },
   },
-}));
-vi.mock('../utils/getPty.js', () => ({
-  getPty: mockGetPty,
 }));
 vi.mock('../utils/terminalSerializer.js', () => ({
   serializeTerminalToObject: mockSerializeTerminalToObject,
@@ -153,9 +153,10 @@ describe('ShellExecutionService', () => {
     mockSerializeTerminalToObject.mockReturnValue([]);
     mockIsBinary.mockReturnValue(false);
     mockPlatform.mockReturnValue('linux');
-    mockGetPty.mockResolvedValue({
-      module: { spawn: mockPtySpawn },
-      name: 'mock-pty',
+    // Mock createPtyAdapter to return a PTY adapter that uses mockPtySpawn
+    mockCreatePtyAdapter.mockResolvedValue({
+      backend: 'bun-pty',
+      spawn: mockPtySpawn,
     });
 
     onOutputEventMock = vi.fn();
@@ -544,7 +545,7 @@ describe('ShellExecutionService', () => {
     });
 
     it('should handle a synchronous spawn error', async () => {
-      mockGetPty.mockImplementation(() => null);
+      mockCreatePtyAdapter.mockResolvedValue(null);
 
       mockCpSpawn.mockImplementation(() => {
         throw new Error('Simulated PTY spawn error');
@@ -832,7 +833,7 @@ describe('ShellExecutionService child_process fallback', () => {
 
     mockIsBinary.mockReturnValue(false);
     mockPlatform.mockReturnValue('linux');
-    mockGetPty.mockResolvedValue(null);
+    mockCreatePtyAdapter.mockResolvedValue(null);
 
     onOutputEventMock = vi.fn();
 
@@ -1227,9 +1228,9 @@ describe('ShellExecutionService execution method selection', () => {
     mockPtyProcess.resize = vi.fn();
 
     mockPtySpawn.mockReturnValue(mockPtyProcess);
-    mockGetPty.mockResolvedValue({
-      module: { spawn: mockPtySpawn },
-      name: 'mock-pty',
+    mockCreatePtyAdapter.mockResolvedValue({
+      backend: 'bun-pty',
+      spawn: mockPtySpawn,
     });
 
     // Mock for child_process
@@ -1245,7 +1246,7 @@ describe('ShellExecutionService execution method selection', () => {
     mockCpSpawn.mockReturnValue(mockChildProcess);
   });
 
-  it('should use node-pty when shouldUseNodePty is true and pty is available', async () => {
+  it('should use bun-pty when shouldUseNodePty is true and pty is available', async () => {
     mockSerializeTerminalToObject.mockReturnValue([]);
     const abortController = new AbortController();
     const handle = await ShellExecutionService.execute(
@@ -1261,10 +1262,9 @@ describe('ShellExecutionService execution method selection', () => {
     mockPtyProcess.onExit.mock.calls[0][0]({ exitCode: 0, signal: null });
     const result = await handle.result;
 
-    expect(mockGetPty).toHaveBeenCalled();
     expect(mockPtySpawn).toHaveBeenCalled();
     expect(mockCpSpawn).not.toHaveBeenCalled();
-    expect(result.executionMethod).toBe('mock-pty');
+    expect(result.executionMethod).toBe('bun-pty');
   });
 
   it('should use child_process when shouldUseNodePty is false', async () => {
@@ -1288,14 +1288,14 @@ describe('ShellExecutionService execution method selection', () => {
     mockChildProcess.emit('exit', 0, null);
     const result = await handle.result;
 
-    expect(mockGetPty).not.toHaveBeenCalled();
+    expect(mockCreatePtyAdapter).not.toHaveBeenCalled();
     expect(mockPtySpawn).not.toHaveBeenCalled();
     expect(mockCpSpawn).toHaveBeenCalled();
     expect(result.executionMethod).toBe('child_process');
   });
 
   it('should fall back to child_process if pty is not available even if shouldUseNodePty is true', async () => {
-    mockGetPty.mockResolvedValue(null);
+    mockCreatePtyAdapter.mockResolvedValue(null);
 
     const abortController = new AbortController();
     const handle = await ShellExecutionService.execute(
@@ -1311,7 +1311,7 @@ describe('ShellExecutionService execution method selection', () => {
     mockChildProcess.emit('exit', 0, null);
     const result = await handle.result;
 
-    expect(mockGetPty).toHaveBeenCalled();
+    expect(mockCreatePtyAdapter).toHaveBeenCalled();
     expect(mockPtySpawn).not.toHaveBeenCalled();
     expect(mockCpSpawn).toHaveBeenCalled();
     expect(result.executionMethod).toBe('child_process');
@@ -1350,9 +1350,9 @@ describe('ShellExecutionService environment variables', () => {
     mockPtyProcess.resize = vi.fn();
 
     mockPtySpawn.mockReturnValue(mockPtyProcess);
-    mockGetPty.mockResolvedValue({
-      module: { spawn: mockPtySpawn },
-      name: 'mock-pty',
+    mockCreatePtyAdapter.mockResolvedValue({
+      backend: 'bun-pty',
+      spawn: mockPtySpawn,
     });
 
     // Mock for child_process
@@ -1415,7 +1415,7 @@ describe('ShellExecutionService environment variables', () => {
     await new Promise(process.nextTick);
 
     // Test child_process path
-    mockGetPty.mockResolvedValue(null); // Force fallback
+    mockCreatePtyAdapter.mockResolvedValue(null); // Force fallback
     await ShellExecutionService.execute(
       'test-cp-command',
       '/',
@@ -1464,7 +1464,7 @@ describe('ShellExecutionService environment variables', () => {
     await new Promise(process.nextTick);
 
     // Test child_process path (forcing fallback by making pty unavailable)
-    mockGetPty.mockResolvedValue(null);
+    mockCreatePtyAdapter.mockResolvedValue(null);
     await ShellExecutionService.execute(
       'test-cp-command-no-github',
       '/',

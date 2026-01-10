@@ -147,7 +147,7 @@ export class TerminalCapabilityManager {
               match[2],
               match[3],
             );
-            debugLogger.log(
+            debugLogger.debug(
               `Detected terminal background color: ${this.terminalBackgroundColor}`,
             );
           }

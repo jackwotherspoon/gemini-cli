@@ -43,16 +43,16 @@ jobs:
           ref: '${{ github.event.pull_request.head.sha }}'
           repository: '${{ github.repository }}'
 
-      - name: 'Set up Node.js ${{ matrix.node-version }}'
-        uses: 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020' # ratchet:actions-node@v4
+      - name: 'Setup Bun'
+        uses: 'oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979' # ratchet:oven-sh/setup-bun@v2
         with:
-          node-version: '${{ matrix.node-version }}'
+          bun-version-file: 'package.json'
 
       - name: 'Install dependencies'
-        run: 'npm ci'
+        run: 'bun install --frozen-lockfile'
 
       - name: 'Build project'
-        run: 'npm run build'
+        run: 'bun run build'
 
       - name: 'Set up Docker'
         if: "matrix.sandbox == 'sandbox:docker'"
@@ -69,9 +69,9 @@ jobs:
         shell: 'bash'
         run: |
           if [[ "${{ env.IS_DOCKER }}" == "true" ]]; then
-            npm run deflake:test:integration:sandbox:docker -- --runs="${{ env.RUNS }}" -- --testNamePattern "'${{ env.TEST_NAME_PATTERN }}'"
+            bun run deflake:test:integration:sandbox:docker -- --runs="${{ env.RUNS }}" -- --testNamePattern "'${{ env.TEST_NAME_PATTERN }}'"
           else
-            npm run deflake:test:integration:sandbox:none -- --runs="${{ env.RUNS }}" -- --testNamePattern "'${{ env.TEST_NAME_PATTERN }}'"
+            bun run deflake:test:integration:sandbox:none -- --runs="${{ env.RUNS }}" -- --testNamePattern "'${{ env.TEST_NAME_PATTERN }}'"
           fi
 
   deflake_e2e_mac:
@@ -84,21 +84,17 @@ jobs:
           ref: '${{ github.event.pull_request.head.sha }}'
           repository: '${{ github.repository }}'
 
-      - name: 'Set up Node.js 20.x'
-        uses: 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020' # ratchet:actions-node@v4
+      - name: 'Setup Bun'
+        uses: 'oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979' # ratchet:oven-sh/setup-bun@v2
         with:
-          node-version: '20.x'
+          bun-version-file: 'package.json'
 
       - name: 'Install dependencies'
-        run: 'npm ci'
+        run: 'bun install --frozen-lockfile'
 
       - name: 'Build project'
-        run: 'npm run build'
+        run: 'bun run build'
 
-      - name: 'Fix rollup optional dependencies on macOS'
-        if: "runner.os == 'macOS'"
-        run: |
-          npm cache clean --force
       - name: 'Run E2E tests (non-Windows)'
         if: "runner.os != 'Windows'"
         env:
@@ -109,7 +105,7 @@ jobs:
           TEST_NAME_PATTERN: '${{ github.event.inputs.test_name_pattern }}'
           VERBOSE: 'true'
         run: |
-          npm run deflake:test:integration:sandbox:none -- --runs="${{ env.RUNS }}" -- --testNamePattern "'${{ env.TEST_NAME_PATTERN }}'"
+          bun run deflake:test:integration:sandbox:none -- --runs="${{ env.RUNS }}" -- --testNamePattern "'${{ env.TEST_NAME_PATTERN }}'"
 
   deflake_e2e_windows:
     name: 'Slow E2E - Win'
@@ -122,11 +118,10 @@ jobs:
           ref: '${{ github.event.pull_request.head.sha }}'
           repository: '${{ github.repository }}'
 
-      - name: 'Set up Node.js 20.x'
-        uses: 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020' # ratchet:actions-node@v4
+      - name: 'Setup Bun'
+        uses: 'oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979' # ratchet:oven-sh/setup-bun@v2
         with:
-          node-version: '20.x'
-          cache: 'npm'
+          bun-version-file: 'package.json'
 
       - name: 'Configure Windows Defender exclusions'
         run: |
@@ -136,22 +131,12 @@ jobs:
           Add-MpPreference -ExclusionPath "$env:TEMP" -Force
         shell: 'pwsh'
 
-      - name: 'Configure npm for Windows performance'
-        run: |
-          npm config set progress false
-          npm config set audit false
-          npm config set fund false
-          npm config set loglevel error
-          npm config set maxsockets 32
-          npm config set registry https://registry.npmjs.org/
-        shell: 'pwsh'
-
       - name: 'Install dependencies'
-        run: 'npm ci'
+        run: 'bun install --frozen-lockfile'
         shell: 'pwsh'
 
       - name: 'Build project'
-        run: 'npm run build'
+        run: 'bun run build'
         shell: 'pwsh'
 
       - name: 'Run E2E tests'
@@ -160,11 +145,8 @@ jobs:
           KEEP_OUTPUT: 'true'
           SANDBOX: 'sandbox:none'
           VERBOSE: 'true'
-          NODE_OPTIONS: '--max-old-space-size=32768 --max-semi-space-size=256'
-          UV_THREADPOOL_SIZE: '32'
-          NODE_ENV: 'test'
           RUNS: '${{ github.event.inputs.runs }}'
           TEST_NAME_PATTERN: '${{ github.event.inputs.test_name_pattern }}'
         shell: 'pwsh'
         run: |
-          npm run deflake:test:integration:sandbox:none -- --runs="${{ env.RUNS }}" -- --testNamePattern "'${{ env.TEST_NAME_PATTERN }}'"
+          bun run deflake:test:integration:sandbox:none -- --runs="${{ env.RUNS }}" -- --testNamePattern "'${{ env.TEST_NAME_PATTERN }}'"

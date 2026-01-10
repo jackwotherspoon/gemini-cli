@@ -55,11 +55,15 @@ jobs:
         uses: 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020' # ratchet:actions/setup-node@v4
         with:
           node-version-file: './release/.nvmrc'
-          cache: 'npm'
+
+      - name: 'Setup Bun'
+        uses: 'oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979' # ratchet:oven-sh/setup-bun@v2
+        with:
+          bun-version-file: 'package.json'
 
       - name: 'Install Dependencies'
         working-directory: './release'
-        run: 'npm ci'
+        run: 'bun install --frozen-lockfile'
 
       - name: 'Print Inputs'
         shell: 'bash'

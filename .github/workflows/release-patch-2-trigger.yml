@@ -67,14 +67,13 @@ jobs:
           ref: "${{ github.event.inputs.workflow_ref || 'main' }}"
           fetch-depth: 1
 
-      - name: 'Setup Node.js'
-        uses: 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020'
+      - name: 'Setup Bun'
+        uses: 'oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979' # ratchet:oven-sh/setup-bun@v2
         with:
-          node-version-file: '.nvmrc'
-          cache: 'npm'
+          bun-version-file: 'package.json'
 
       - name: 'Install Dependencies'
-        run: 'npm ci'
+        run: 'bun install --frozen-lockfile'
 
       - name: 'Trigger Patch Release'
         env:

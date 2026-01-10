@@ -35,6 +35,11 @@ runs:
         JSON_INPUTS: '${{ toJSON(inputs) }}'
       run: 'echo "$JSON_INPUTS"'
 
+    - name: 'Setup Bun'
+      uses: 'oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979' # ratchet:oven-sh/setup-bun@v2
+      with:
+        bun-version-file: '${{ inputs.working-directory }}/package.json'
+
     - name: 'setup node'
       uses: 'actions/setup-node@v4'
       with:
@@ -86,7 +91,7 @@ runs:
     - name: 'Install dependencies for integration tests'
       shell: 'bash'
       working-directory: '${{ inputs.working-directory }}'
-      run: 'npm ci'
+      run: 'bun install --frozen-lockfile'
 
     - name: '🔬 Run integration tests against NPM release'
       working-directory: '${{ inputs.working-directory }}'
@@ -97,4 +102,4 @@ runs:
         # See https://github.com/google-gemini/gemini-cli/issues/10517
         CI: 'false'
       shell: 'bash'
-      run: 'npm run test:integration:sandbox:none'
+      run: 'bun run test:integration:sandbox:none'

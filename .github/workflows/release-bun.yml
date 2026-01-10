@@ -1,0 +1,174 @@
+name: 'Release: Bun Binary'
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.0)'
+        required: true
+        type: string
+        default: '0.1.0'
+      npm_tag:
+        description: 'npm dist-tag'
+        required: true
+        type: choice
+        options:
+          - 'dev'
+          - 'preview'
+          - 'latest'
+        default: 'dev'
+      dry_run:
+        description: 'Dry run (no actual publish)'
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 'Setup Bun'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: 'package.json'
+
+      - name: 'Install Dependencies'
+        run: bun install --frozen-lockfile
+
+      - name: 'Update Version'
+        run: |
+          echo "Updating version to ${{ inputs.version }}..."
+          # Update root package.json
+          bun run release:version "${{ inputs.version }}"
+
+      - name: 'Build Packages'
+        run: |
+          echo "Building packages..."
+          bun run build
+
+      - name: 'Bundle CLI'
+        run: |
+          echo "Creating bundle..."
+          bun run bundle
+
+      - name: 'Build Bun Binaries (All Platforms)'
+        run: |
+          echo "Building Bun standalone binaries for all platforms..."
+          bun run scripts/build-binary.ts --all --skip-bundle
+
+      - name: 'Build Wrapper Package'
+        run: |
+          echo "Building wrapper package..."
+          bun run scripts/build-wrapper.ts
+
+      - name: 'List Built Packages'
+        run: |
+          echo "Built packages:"
+          ls -la dist/
+          echo ""
+          echo "Package details:"
+          for pkg_dir in dist/bun-gemini-cli*/; do
+            if [ -f "$pkg_dir/package.json" ]; then
+              name=$(cat "$pkg_dir/package.json" | jq -r '.name')
+              version=$(cat "$pkg_dir/package.json" | jq -r '.version')
+              echo "  - $name@$version"
+            fi
+          done
+
+      - name: 'Setup Node for npm publish'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 'Publish Platform Packages'
+        if: ${{ inputs.dry_run == false }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "Publishing platform-specific binary packages..."
+
+          for pkg_dir in dist/bun-gemini-cli-*/; do
+            if [ -d "$pkg_dir" ] && [ -f "$pkg_dir/package.json" ]; then
+              pkg_name=$(cat "$pkg_dir/package.json" | jq -r '.name')
+              echo ""
+              echo "Publishing $pkg_name..."
+
+              cd "$pkg_dir"
+              npm publish --access public --tag ${{ inputs.npm_tag }} || {
+                echo "Warning: $pkg_name publish failed (may already exist at this version)"
+              }
+              cd - > /dev/null
+            fi
+          done
+
+      - name: 'Publish Wrapper Package'
+        if: ${{ inputs.dry_run == false }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "Publishing wrapper package..."
+          cd dist/bun-gemini-cli
+          npm publish --access public --tag ${{ inputs.npm_tag }} || {
+            echo "Warning: wrapper publish failed (may already exist at this version)"
+          }
+
+      - name: 'Dry Run - Show what would be published'
+        if: ${{ inputs.dry_run == true }}
+        run: |
+          echo "=== DRY RUN - No packages published ==="
+          echo ""
+          echo "Would publish the following packages with tag '${{ inputs.npm_tag }}':"
+          echo ""
+
+          for pkg_dir in dist/bun-gemini-cli*/; do
+            if [ -f "$pkg_dir/package.json" ]; then
+              name=$(cat "$pkg_dir/package.json" | jq -r '.name')
+              version=$(cat "$pkg_dir/package.json" | jq -r '.version')
+              echo "  npm publish $name@$version --tag ${{ inputs.npm_tag }}"
+            fi
+          done
+
+          echo ""
+          echo "To actually publish, re-run with dry_run=false"
+
+      - name: 'Verify Installation'
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          echo "Waiting for npm to propagate..."
+          sleep 30
+
+          echo "Testing installation..."
+          mkdir -p /tmp/test-install
+          cd /tmp/test-install
+          npm init -y
+          npm install bun-gemini-cli@${{ inputs.npm_tag }} || {
+            echo "Installation test failed - package may need more time to propagate"
+            exit 0
+          }
+
+          echo ""
+          echo "Checking version..."
+          npx bun-gemini-cli --version || ./node_modules/.bin/gemini --version || echo "Version check skipped"
+
+      - name: 'Summary'
+        run: |
+          echo "============================================"
+          echo "Release Summary"
+          echo "============================================"
+          echo "Version: ${{ inputs.version }}"
+          echo "npm tag: ${{ inputs.npm_tag }}"
+          echo "Dry run: ${{ inputs.dry_run }}"
+          echo ""
+          if [ "${{ inputs.dry_run }}" == "false" ]; then
+            echo "Install with:"
+            echo "  npm install bun-gemini-cli@${{ inputs.npm_tag }}"
+            echo ""
+            echo "Or for specific version:"
+            echo "  npm install bun-gemini-cli@${{ inputs.version }}"
+          fi

@@ -5,12 +5,14 @@
  */
 
 import stripAnsi from 'strip-ansi';
-import type { PtyImplementation } from '../utils/getPty.js';
-import { getPty } from '../utils/getPty.js';
+import {
+  createPtyAdapter,
+  type PtyAdapter,
+  type PtyInstance,
+} from '../utils/pty-adapter.js';
 import { spawn as cpSpawn } from 'node:child_process';
 import { TextDecoder } from 'node:util';
 import os from 'node:os';
-import type { IPty } from '@lydell/node-pty';
 import { getCachedEncodingForBuffer } from '../utils/systemEncoding.js';
 import { getShellConfiguration, type ShellType } from '../utils/shell-utils.js';
 import { isBinary } from '../utils/textUtils.js';
@@ -66,7 +68,7 @@ export interface ShellExecutionResult {
   /** The process ID of the spawned shell. */
   pid: number | undefined;
   /** The method used to execute the shell command. */
-  executionMethod: 'lydell-node-pty' | 'node-pty' | 'child_process' | 'none';
+  executionMethod: 'bun-pty' | 'child_process' | 'none';
 }
 
 /** A handle for an ongoing shell execution. */
@@ -112,7 +114,7 @@ export type ShellOutputEvent =
     };
 
 interface ActivePty {
-  ptyProcess: IPty;
+  ptyProcess: PtyInstance;
   headlessTerminal: pkg.Terminal;
 }
 
@@ -162,7 +164,7 @@ const getFullBufferText = (terminal: pkg.Terminal): string => {
 export class ShellExecutionService {
   private static activePtys = new Map<number, ActivePty>();
   /**
-   * Executes a shell command using `node-pty`, capturing all output and lifecycle events.
+   * Executes a shell command using `bun-pty`, capturing all output and lifecycle events.
    *
    * @param commandToExecute The exact command string to run.
    * @param cwd The working directory to execute the command in.
@@ -180,8 +182,9 @@ export class ShellExecutionService {
     shellExecutionConfig: ShellExecutionConfig,
   ): Promise<ShellExecutionHandle> {
     if (shouldUseNodePty) {
-      const ptyInfo = await getPty();
-      if (ptyInfo) {
+      // Try bun-pty adapter
+      const bunAdapter = await createPtyAdapter();
+      if (bunAdapter) {
         try {
           return this.executeWithPty(
             commandToExecute,
@@ -189,7 +192,7 @@ export class ShellExecutionService {
             onOutputEvent,
             abortSignal,
             shellExecutionConfig,
-            ptyInfo,
+            bunAdapter,
           );
         } catch (_e) {
           // Fallback to child_process
@@ -445,18 +448,17 @@ export class ShellExecutionService {
     }
   }
 
+  /**
+   * Executes a shell command using bun-pty.
+   */
   private static executeWithPty(
     commandToExecute: string,
     cwd: string,
     onOutputEvent: (event: ShellOutputEvent) => void,
     abortSignal: AbortSignal,
     shellExecutionConfig: ShellExecutionConfig,
-    ptyInfo: PtyImplementation,
+    adapter: PtyAdapter,
   ): ShellExecutionHandle {
-    if (!ptyInfo) {
-      // This should not happen, but as a safeguard...
-      throw new Error('PTY implementation not found');
-    }
     try {
       const cols = shellExecutionConfig.terminalWidth ?? 80;
       const rows = shellExecutionConfig.terminalHeight ?? 30;
@@ -464,7 +466,7 @@ export class ShellExecutionService {
       const guardedCommand = ensurePromptvarsDisabled(commandToExecute, shell);
       const args = [...argsPrefix, guardedCommand];
 
-      const ptyProcess = ptyInfo.module.spawn(executable, args, {
+      const ptyProcess = adapter.spawn(executable, args, {
         cwd,
         name: 'xterm',
         cols,
@@ -479,7 +481,6 @@ export class ShellExecutionService {
           PAGER: shellExecutionConfig.pager ?? 'cat',
           GIT_PAGER: shellExecutionConfig.pager ?? 'cat',
         },
-        handleFlowControl: true,
       });
 
       const result = new Promise<ShellExecutionResult>((resolve) => {
@@ -563,7 +564,6 @@ export class ShellExecutionService {
             ? newOutput
             : trimmedOutput;
 
-          // Using stringify for a quick deep comparison.
           if (JSON.stringify(output) !== JSON.stringify(finalOutput)) {
             output = finalOutput;
             onOutputEvent({
@@ -601,7 +601,7 @@ export class ShellExecutionService {
         const handleOutput = (data: Buffer) => {
           processingChain = processingChain.then(
             () =>
-              new Promise<void>((resolve) => {
+              new Promise<void>((resolveChain) => {
                 if (!decoder) {
                   const encoding = getCachedEncodingForBuffer(data);
                   try {
@@ -626,14 +626,14 @@ export class ShellExecutionService {
                 if (isStreamingRawContent) {
                   const decodedChunk = decoder.decode(data, { stream: true });
                   if (decodedChunk.length === 0) {
-                    resolve();
+                    resolveChain();
                     return;
                   }
                   isWriting = true;
                   headlessTerminal.write(decodedChunk, () => {
                     render();
                     isWriting = false;
-                    resolve();
+                    resolveChain();
                   });
                 } else {
                   const totalBytes = outputChunks.reduce(
@@ -644,7 +644,7 @@ export class ShellExecutionService {
                     type: 'binary_progress',
                     bytesReceived: totalBytes,
                   });
-                  resolve();
+                  resolveChain();
                 }
               }),
           );
@@ -655,50 +655,48 @@ export class ShellExecutionService {
           handleOutput(bufferData);
         });
 
-        ptyProcess.onExit(
-          ({ exitCode, signal }: { exitCode: number; signal?: number }) => {
-            exited = true;
-            abortSignal.removeEventListener('abort', abortHandler);
-            this.activePtys.delete(ptyProcess.pid);
+        ptyProcess.onExit(({ exitCode, signal }) => {
+          exited = true;
+          abortSignal.removeEventListener('abort', abortHandler);
+          this.activePtys.delete(ptyProcess.pid);
 
-            const finalize = () => {
-              render(true);
-              const finalBuffer = Buffer.concat(outputChunks);
+          const finalize = () => {
+            render(true);
+            const finalBuffer = Buffer.concat(outputChunks);
 
-              resolve({
-                rawOutput: finalBuffer,
-                output: getFullBufferText(headlessTerminal),
-                exitCode,
-                signal: signal ?? null,
-                error,
-                aborted: abortSignal.aborted,
-                pid: ptyProcess.pid,
-                executionMethod: ptyInfo?.name ?? 'node-pty',
-              });
-            };
+            resolve({
+              rawOutput: finalBuffer,
+              output: getFullBufferText(headlessTerminal),
+              exitCode,
+              signal: signal ?? null,
+              error,
+              aborted: abortSignal.aborted,
+              pid: ptyProcess.pid,
+              executionMethod: adapter.backend,
+            });
+          };
 
+          if (abortSignal.aborted) {
+            finalize();
+            return;
+          }
+
+          const processingComplete = processingChain.then(() => 'processed');
+          const abortFired = new Promise<'aborted'>((res) => {
             if (abortSignal.aborted) {
-              finalize();
+              res('aborted');
               return;
             }
-
-            const processingComplete = processingChain.then(() => 'processed');
-            const abortFired = new Promise<'aborted'>((res) => {
-              if (abortSignal.aborted) {
-                res('aborted');
-                return;
-              }
-              abortSignal.addEventListener('abort', () => res('aborted'), {
-                once: true,
-              });
+            abortSignal.addEventListener('abort', () => res('aborted'), {
+              once: true,
             });
+          });
 
-            // eslint-disable-next-line @typescript-eslint/no-floating-promises
-            Promise.race([processingComplete, abortFired]).then(() => {
-              finalize();
-            });
-          },
-        );
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          Promise.race([processingComplete, abortFired]).then(() => {
+            finalize();
+          });
+        });
 
         const abortHandler = async () => {
           if (ptyProcess.pid && !exited) {
@@ -706,14 +704,12 @@ export class ShellExecutionService {
               ptyProcess.kill();
             } else {
               try {
-                // Kill the entire process group
                 process.kill(-ptyProcess.pid, 'SIGTERM');
                 await new Promise((res) => setTimeout(res, SIGKILL_TIMEOUT_MS));
                 if (!exited) {
                   process.kill(-ptyProcess.pid, 'SIGKILL');
                 }
               } catch (_e) {
-                // Fallback to killing just the process if the group kill fails
                 ptyProcess.kill('SIGTERM');
                 await new Promise((res) => setTimeout(res, SIGKILL_TIMEOUT_MS));
                 if (!exited) {
@@ -734,7 +730,7 @@ export class ShellExecutionService {
         onOutputEvent({
           type: 'data',
           chunk:
-            '[GEMINI_CLI_WARNING] PTY execution failed, falling back to child_process. This may be due to sandbox restrictions.\n',
+            '[GEMINI_CLI_WARNING] Bun PTY execution failed, falling back. This may be due to sandbox restrictions.\n',
         });
         throw e;
       } else {
@@ -807,12 +803,7 @@ export class ShellExecutionService {
         const isWindowsPtyError = err.message?.includes(
           'Cannot resize a pty that has already exited',
         );
-
-        if (isEsrch || isWindowsPtyError) {
-          // On Unix, we get an ESRCH error.
-          // On Windows, we get a message-based error.
-          // In both cases, it's safe to ignore.
-        } else {
+        if (!(isEsrch || isWindowsPtyError)) {
           throw e;
         }
       }
@@ -840,9 +831,7 @@ export class ShellExecutionService {
       } catch (e) {
         // Ignore errors if the pty has already exited, which can happen
         // due to a race condition between the exit event and this call.
-        if (e instanceof Error && 'code' in e && e.code === 'ESRCH') {
-          // ignore
-        } else {
+        if (!(e instanceof Error && 'code' in e && e.code === 'ESRCH')) {
           throw e;
         }
       }
