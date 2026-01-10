@@ -25,19 +25,19 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 
-// npm install if node_modules was removed (e.g. via npm run clean or scripts/clean.js)
+// bun install if node_modules was removed (e.g. via bun run clean or scripts/clean.js)
 if (!existsSync(join(root, 'node_modules'))) {
-  execSync('npm install', { stdio: 'inherit', cwd: root });
+  execSync('bun install', { stdio: 'inherit', cwd: root });
 }
 
 // build all workspaces/packages
-execSync('npm run generate', { stdio: 'inherit', cwd: root });
+execSync('bun run generate', { stdio: 'inherit', cwd: root });
 execSync('npm run build --workspaces', { stdio: 'inherit', cwd: root });
 
 // also build container image if sandboxing is enabled
-// skip (-s) npm install + build since we did that above
+// skip (-s) bun install + build since we did that above
 try {
-  execSync('node scripts/sandbox_command.js -q', {
+  execSync('bun scripts/sandbox_command.js -q', {
     stdio: 'inherit',
     cwd: root,
   });
@@ -45,7 +45,7 @@ try {
     process.env.BUILD_SANDBOX === '1' ||
     process.env.BUILD_SANDBOX === 'true'
   ) {
-    execSync('node scripts/build_sandbox.js -s', {
+    execSync('bun scripts/build_sandbox.js -s', {
       stdio: 'inherit',
       cwd: root,
     });
