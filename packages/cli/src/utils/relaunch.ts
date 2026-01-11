@@ -36,17 +36,18 @@ export async function relaunchAppInChildProcess(
     return;
   }
 
+  const scriptPath = process.argv[1];
+
+  // For compiled binaries, runtime args are already baked in, so skip relaunch
+  if (scriptPath?.startsWith('/$bunfs/')) {
+    return;
+  }
+
   const runner = () => {
     const scriptArgs = process.argv.slice(2);
-
-    // For compiled binaries, the script is embedded so we don't pass it.
-    // For development (running with `bun`), we need to pass the script path.
-    const isCompiledBinary = process.argv[1]?.startsWith('/$bunfs/');
-    const scriptPath = isCompiledBinary ? [] : [process.argv[1]];
-
     const args = [
       ...additionalBunArgs,
-      ...scriptPath,
+      scriptPath,
       ...additionalScriptArgs,
       ...scriptArgs,
     ];
