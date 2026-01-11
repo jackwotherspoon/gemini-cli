@@ -6,18 +6,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Debug TTY detection - remove after fixing
-if (process.env['DEBUG_TTY']) {
-  const tty = await import('node:tty');
-  console.error('[DEBUG TTY]', {
-    'process.stdin.isTTY': process.stdin.isTTY,
-    'process.stdout.isTTY': process.stdout.isTTY,
-    'tty.isatty(0)': tty.isatty(0),
-    'tty.isatty(1)': tty.isatty(1),
-    'process.argv': process.argv,
-  });
-}
-
 import { main } from './src/gemini.js';
 import { FatalError, writeToStderr } from '@google/gemini-cli-core';
 import { runExitCleanup } from './src/utils/cleanup.js';
