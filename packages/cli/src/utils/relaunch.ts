@@ -29,7 +29,7 @@ export async function relaunchOnExitCode(runner: () => Promise<number>) {
 }
 
 export async function relaunchAppInChildProcess(
-  additionalNodeArgs: string[],
+  additionalBunArgs: string[],
   additionalScriptArgs: string[],
 ) {
   if (process.env['GEMINI_CLI_NO_RELAUNCH']) {
@@ -37,15 +37,16 @@ export async function relaunchAppInChildProcess(
   }
 
   const runner = () => {
-    // process.argv is [node, script, ...args]
-    // We want to construct [ ...nodeArgs, script, ...scriptArgs]
-    const script = process.argv[1];
     const scriptArgs = process.argv.slice(2);
 
-    const nodeArgs = [
-      ...process.execArgv,
-      ...additionalNodeArgs,
-      script,
+    // For compiled binaries, the script is embedded so we don't pass it.
+    // For development (running with `bun`), we need to pass the script path.
+    const isCompiledBinary = process.argv[1]?.startsWith('/$bunfs/');
+    const scriptPath = isCompiledBinary ? [] : [process.argv[1]];
+
+    const args = [
+      ...additionalBunArgs,
+      ...scriptPath,
       ...additionalScriptArgs,
       ...scriptArgs,
     ];
@@ -54,7 +55,7 @@ export async function relaunchAppInChildProcess(
     // The parent process should not be reading from stdin while the child is running.
     process.stdin.pause();
 
-    const child = spawn(process.execPath, nodeArgs, {
+    const child = spawn(process.execPath, args, {
       stdio: 'inherit',
       env: newEnv,
     });
