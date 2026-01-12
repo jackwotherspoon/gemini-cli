@@ -66,6 +66,7 @@ const wrapperPkg = {
   name: PACKAGE_PREFIX,
   version,
   description: 'Gemini CLI - AI-powered command-line interface',
+  type: 'module',
   license: 'Apache-2.0',
   repository: {
     type: 'git',
@@ -88,7 +89,7 @@ console.log('✓ Created package.json');
 const binDir = `${outputDir}/bin`;
 await Bun.write(`${binDir}/.gitkeep`, '');
 
-// Create launcher script (follows opencode's pattern)
+// Create launcher script using ESM
 const launcherScript = `#!/usr/bin/env node
 
 /**
@@ -102,10 +103,27 @@ const launcherScript = `#!/usr/bin/env node
  * Detects the current platform and runs the appropriate binary.
  */
 
-const { execFileSync, spawnSync } = require('child_process');
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
+import { execFileSync, spawnSync } from 'node:child_process';
+import { readdirSync, existsSync, realpathSync } from 'node:fs';
+import { platform as osPlatform, arch as osArch } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+function run(target) {
+  const result = spawnSync(target, process.argv.slice(2), {
+    stdio: 'inherit',
+    windowsHide: true,
+  });
+  if (result.error) {
+    console.error(result.error.message);
+    process.exit(1);
+  }
+  const code = typeof result.status === 'number' ? result.status : 0;
+  process.exit(code);
+}
 
 // Allow override via environment variable
 const envPath = process.env.GEMINI_BIN_PATH;
@@ -125,12 +143,12 @@ const archMap = {
   arm64: 'arm64',
 };
 
-const platform = platformMap[os.platform()] || os.platform();
-const arch = archMap[os.arch()] || os.arch();
+const platform = platformMap[osPlatform()] || osPlatform();
+const arch = archMap[osArch()] || osArch();
 
 // Check for musl libc on Linux
 let suffix = '';
-if (os.platform() === 'linux') {
+if (osPlatform() === 'linux') {
   try {
     const lddOutput = execFileSync('ldd', ['--version'], {
       encoding: 'utf8',
@@ -142,7 +160,7 @@ if (os.platform() === 'linux') {
   } catch {
     // If ldd fails, try checking /lib for musl
     try {
-      const libFiles = fs.readdirSync('/lib');
+      const libFiles = readdirSync('/lib');
       if (libFiles.some((f) => f.includes('musl'))) {
         suffix = '-musl';
       }
@@ -155,36 +173,23 @@ if (os.platform() === 'linux') {
 const base = '${PACKAGE_PREFIX}-' + platform + '-' + arch + suffix;
 const binary = platform === 'windows' ? 'gemini.exe' : 'gemini';
 
-function run(target) {
-  const result = spawnSync(target, process.argv.slice(2), {
-    stdio: 'inherit',
-    windowsHide: true,
-  });
-  if (result.error) {
-    console.error(result.error.message);
-    process.exit(1);
-  }
-  const code = typeof result.status === 'number' ? result.status : 0;
-  process.exit(code);
-}
-
 function findBinary(startDir) {
   let current = startDir;
   for (;;) {
-    const modules = path.join(current, 'node_modules');
-    if (fs.existsSync(modules)) {
-      const entries = fs.readdirSync(modules);
+    const modules = join(current, 'node_modules');
+    if (existsSync(modules)) {
+      const entries = readdirSync(modules);
       for (const entry of entries) {
         // Try exact match first, then baseline
         if (entry === base || entry === base + '-baseline') {
-          const candidate = path.join(modules, entry, 'bin', binary);
-          if (fs.existsSync(candidate)) {
+          const candidate = join(modules, entry, 'bin', binary);
+          if (existsSync(candidate)) {
             return candidate;
           }
         }
       }
     }
-    const parent = path.dirname(current);
+    const parent = dirname(current);
     if (parent === current) {
       return null;
     }
@@ -192,8 +197,8 @@ function findBinary(startDir) {
   }
 }
 
-const scriptPath = fs.realpathSync(__filename);
-const scriptDir = path.dirname(scriptPath);
+const scriptPath = realpathSync(__filename);
+const scriptDir = dirname(scriptPath);
 const resolved = findBinary(scriptDir);
 
 if (!resolved) {
